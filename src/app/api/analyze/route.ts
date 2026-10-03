@@ -76,3 +76,4 @@ ${body.doctorNotes?.trim() || "None"}`;
     stream: toTextStream({ stream: result.stream }),
   });
 }
+
