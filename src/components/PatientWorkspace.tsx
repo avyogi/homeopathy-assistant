@@ -114,6 +114,21 @@ export default function PatientWorkspace({ patient }: Props) {
         text += decoder.decode(value, { stream: true });
         setAnalysis(text);
       }
+
+      text += decoder.decode();
+      setAnalysis(text);
+
+      if (!text.trim()) {
+        throw new Error(
+          "Analysis returned no content. Check the Gemini API key/model.",
+        );
+      }
+
+      const errorMarker = text.indexOf("**Error:**");
+      if (errorMarker !== -1) {
+        throw new Error(text.slice(errorMarker).replace("**Error:**", "").trim());
+      }
+
       setStatus("Analysis complete. Review and finalize remedies below.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Analysis failed");

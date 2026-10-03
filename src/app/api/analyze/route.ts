@@ -1,9 +1,5 @@
-import {
-  createTextStreamResponse,
-  streamText,
-  toTextStream,
-} from "ai";
-import { openai } from "@ai-sdk/openai";
+import { streamText } from "ai";
+import { google } from "@ai-sdk/google";
 import { ANALYSIS_SYSTEM_PROMPT } from "@/lib/prompts";
 import { createClient } from "@/lib/supabase/server";
 import type { SymptomEntry } from "@/lib/types";
@@ -29,8 +25,11 @@ export async function POST(req: Request) {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  if (!process.env.OPENAI_API_KEY) {
-    return new Response("OPENAI_API_KEY is not configured", { status: 500 });
+  if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+    return new Response(
+      "GOOGLE_GENERATIVE_AI_API_KEY is not configured",
+      { status: 500 },
+    );
   }
 
   const body = (await req.json()) as AnalyzeBody;
@@ -66,14 +65,54 @@ ${symptomBlock}
 Doctor notes:
 ${body.doctorNotes?.trim() || "None"}`;
 
-  const result = streamText({
-    model: openai("gpt-4o"),
-    instructions: ANALYSIS_SYSTEM_PROMPT,
-    prompt,
-  });
+  try {
+    const result = streamText({
+      model: google("gemini-3.8-flash"),
+      system: ANALYSIS_SYSTEM_PROMPT,
+      prompt,
+      onError: ({ error }) => {
+        console.error("Gemini analysis stream error:", error);
+      },
+    });
 
-  return createTextStreamResponse({
-    stream: toTextStream({ stream: result.stream }),
-  });
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        try {
+          let produced = false;
+          for await (const chunk of result.textStream) {
+            produced = true;
+            controller.enqueue(encoder.encode(chunk));
+          }
+          if (!produced) {
+            controller.enqueue(
+              encoder.encode(
+                "Gemini returned an empty analysis. Try again or check the model/API key.",
+              ),
+            );
+          }
+          controller.close();
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Gemini analysis failed";
+          console.error("Gemini analysis failed:", error);
+          try {
+            controller.enqueue(encoder.encode(`\n\n**Error:** ${message}`));
+            controller.close();
+          } catch {
+            controller.error(error);
+          }
+        }
+      },
+    });
+
+    return new Response(stream, {
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+  } catch (error) {
+    console.error("Gemini analysis failed:", error);
+    const message =
+      error instanceof Error ? error.message : "Gemini analysis failed";
+    return new Response(message, { status: 502 });
+  }
 }
-

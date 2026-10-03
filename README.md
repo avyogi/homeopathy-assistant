@@ -7,7 +7,7 @@ Next.js 15 clinical workspace for Classical Homeopathy and Electro-Homeopathy co
 - Next.js 15 (App Router)
 - Supabase (`@supabase/ssr`, Auth, PostgreSQL + RLS)
 - Tailwind CSS
-- Vercel AI SDK (`ai`, `@ai-sdk/openai`)
+- Vercel AI SDK (`ai`, `@ai-sdk/google`)
 
 ## Setup
 
@@ -21,7 +21,7 @@ Fill in:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `OPENAI_API_KEY`
+- `GOOGLE_GENERATIVE_AI_API_KEY` (from [Google AI Studio](https://aistudio.google.com/apikey))
 
 2. Run the SQL migration in the Supabase SQL editor:
 
