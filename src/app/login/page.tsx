@@ -52,7 +52,7 @@ export default function LoginPage() {
     <main className="auth-shell">
       <section className="auth-panel">
         <p className="eyebrow">Clinical workspace</p>
-        <h1>Remedia</h1>
+        <img src="/logo.png" alt="Remedia" className="login-logo" />
         <p className="lede">
           Classical & Electro-Homeopathy case analysis for practitioners.
         </p>

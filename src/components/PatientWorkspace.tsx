@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { createClient } from "@/lib/supabase/client";
+import NewPatientModal from "./NewPatientModal";
 import {
-  consultationHistoryLabel,
+  consultationHistoryParts,
   emptySymptom,
   formatSymptom,
   parseSuggestedTags,
@@ -16,10 +17,17 @@ import {
 } from "@/lib/types";
 
 type Props = {
-  patient: Patient;
+  patient?: Patient | null;
+  variant?: "patient" | "dry-run";
+  readOnly?: boolean;
+  initialConsultation?: Consultation | null;
+  onDryRunSaved?: () => void;
+  onPatientUpdated?: (patient: Patient) => void;
+  onPatientArchived?: (patientId: string) => void;
 };
 
 const MAX_SYMPTOMS = 10;
+const HISTORY_PAGE = 5;
 
 const emptyRemedy = (): PrescribedRemedy => ({
   name: "",
@@ -55,15 +63,38 @@ function validateSymptoms(symptoms: SymptomEntry[]) {
   return null;
 }
 
-export default function PatientWorkspace({ patient }: Props) {
-  const [symptoms, setSymptoms] = useState<SymptomEntry[]>([emptySymptom()]);
-  const [doctorNotes, setDoctorNotes] = useState("");
-  const [analysis, setAnalysis] = useState("");
-  const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+export default function PatientWorkspace({
+  patient = null,
+  variant = "patient",
+  readOnly = false,
+  initialConsultation = null,
+  onDryRunSaved,
+  onPatientUpdated,
+  onPatientArchived,
+}: Props) {
+  const isDryRun = variant === "dry-run";
+  const [symptoms, setSymptoms] = useState<SymptomEntry[]>(() => {
+    if (!initialConsultation) return [emptySymptom()];
+    const parsed = initialConsultation.symptoms.map(parseSymptom);
+    return parsed.length > 0 ? parsed : [emptySymptom()];
+  });
+  const [doctorNotes, setDoctorNotes] = useState(
+    initialConsultation?.doctor_notes ?? "",
+  );
+  const [analysis, setAnalysis] = useState(
+    initialConsultation?.remedy_analysis ?? "",
+  );
+  const [suggestedTags, setSuggestedTags] = useState<string[]>(
+    initialConsultation?.tags ?? [],
+  );
+  const [selectedTags, setSelectedTags] = useState<string[]>(
+    initialConsultation?.tags ?? [],
+  );
   const [analyzing, setAnalyzing] = useState(false);
   const [remedies, setRemedies] = useState<PrescribedRemedy[]>([emptyRemedy()]);
   const [history, setHistory] = useState<Consultation[]>([]);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [visibleCount, setVisibleCount] = useState(HISTORY_PAGE);
   const [activeConsultationId, setActiveConsultationId] = useState<string | null>(
     null,
   );
@@ -71,17 +102,21 @@ export default function PatientWorkspace({ patient }: Props) {
   const [confirmSave, setConfirmSave] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(isDryRun);
+  const [editOpen, setEditOpen] = useState(false);
 
   const loadHistory = useCallback(async () => {
+    if (!patient) return;
     const supabase = createClient();
-    const { data, error: loadError } = await supabase
+    const { data, count, error: loadError } = await supabase
       .from("consultations")
       .select(
         "id, patient_id, symptoms, doctor_notes, remedy_analysis, prescribed_remedies, tags, created_at, updated_at",
+        { count: "exact" },
       )
       .eq("patient_id", patient.id)
       .order("created_at", { ascending: false })
-      .limit(5);
+      .limit(visibleCount);
 
     if (loadError) {
       setError(loadError.message);
@@ -89,7 +124,8 @@ export default function PatientWorkspace({ patient }: Props) {
     }
 
     setHistory((data ?? []) as Consultation[]);
-  }, [patient.id]);
+    setHistoryTotal(count ?? data?.length ?? 0);
+  }, [patient, visibleCount]);
 
   useEffect(() => {
     void loadHistory();
@@ -123,6 +159,7 @@ export default function PatientWorkspace({ patient }: Props) {
   }
 
   function startNewConsultation() {
+    setFormOpen(true);
     setActiveConsultationId(null);
     setSymptoms([emptySymptom()]);
     setDoctorNotes("");
@@ -136,6 +173,7 @@ export default function PatientWorkspace({ patient }: Props) {
   }
 
   function openConsultation(consultation: Consultation) {
+    setFormOpen(true);
     const parsed = consultation.symptoms.map(parseSymptom);
     setActiveConsultationId(consultation.id);
     setSymptoms(parsed.length > 0 ? parsed : [emptySymptom()]);
@@ -182,10 +220,10 @@ export default function PatientWorkspace({ patient }: Props) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          patientName: patient.full_name,
-          age: patient.age,
-          gender: patient.gender,
-          constitutionalNotes: patient.constitutional_notes,
+          patientName: patient?.full_name || "Dry run",
+          age: patient?.age,
+          gender: patient?.gender,
+          constitutionalNotes: patient?.constitutional_notes,
           symptoms: filled,
           doctorNotes,
         }),
@@ -227,7 +265,29 @@ export default function PatientWorkspace({ patient }: Props) {
         throw new Error(text.slice(errorMarker).replace("**Error:**", "").trim());
       }
 
-      setStatus("Analysis complete. Select tags, then review and finalize remedies.");
+      const tags = parseSuggestedTags(text);
+      if (isDryRun && !readOnly) {
+        if (!patient) {
+          throw new Error("Dry run patient is not ready yet.");
+        }
+        setSelectedTags(tags);
+        const supabase = createClient();
+        const { error: saveError } = await supabase.from("consultations").insert({
+          patient_id: patient.id,
+          symptoms: filled.map(formatSymptom),
+          doctor_notes: doctorNotes.trim() || null,
+          remedy_analysis: text,
+          prescribed_remedies: [],
+          tags,
+        });
+        if (saveError) {
+          throw new Error(saveError.message);
+        }
+        onDryRunSaved?.();
+        setStatus("Dry run saved. It is listed under Dry runs.");
+      } else {
+        setStatus("Analysis complete. Select tags, then review and finalize remedies.");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Analysis failed");
     } finally {
@@ -265,6 +325,7 @@ export default function PatientWorkspace({ patient }: Props) {
   }
 
   async function persistConsultation(mode: "insert" | "update") {
+    if (!patient) return;
     setConfirmSave(false);
     setSaving(true);
     setError(null);
@@ -314,61 +375,104 @@ export default function PatientWorkspace({ patient }: Props) {
     await loadHistory();
   }
 
+  const showForm = isDryRun || formOpen;
+
   return (
     <section className="workspace">
-      <header className="workspace-header">
-        <div>
-          <h2>{patient.full_name}</h2>
-          <div className="meta-row">
-            {patient.age != null && <span>Age {patient.age}</span>}
-            {patient.gender && <span>{patient.gender}</span>}
-            {patient.contact_phone && <span>{patient.contact_phone}</span>}
+      {patient && !isDryRun && (
+        <header className="workspace-header">
+          <div>
+            <div className="patient-title">
+              <h2>{patient.full_name}</h2>
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label={`Edit ${patient.full_name}`}
+                onClick={() => setEditOpen(true)}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M4 16.5V20h3.5L18.8 8.7l-3.5-3.5L4 16.5zm15.7-9.2a1 1 0 0 0 0-1.4l-2.1-2.1a1 1 0 0 0-1.4 0l-1.3 1.3 3.5 3.5 1.3-1.3z"
+                    fill="currentColor"
+                  />
+                </svg>
+              </button>
+            </div>
+            <div className="meta-row">
+              {patient.age != null && <span>Age {patient.age}</span>}
+              {patient.gender && <span>{patient.gender}</span>}
+              {patient.contact_phone && <span>{patient.contact_phone}</span>}
+            </div>
+            {patient.constitutional_notes && (
+              <p className="empty-hint" style={{ marginTop: "0.6rem" }}>
+                {patient.constitutional_notes}
+              </p>
+            )}
           </div>
-          {patient.constitutional_notes && (
-            <p className="empty-hint" style={{ marginTop: "0.6rem" }}>
-              {patient.constitutional_notes}
-            </p>
-          )}
-        </div>
-      </header>
+        </header>
+      )}
 
-      <div className="panel">
-        <div className="history-header">
+      {!isDryRun && (
+      <div className="panel history-split">
+        <button
+          type="button"
+          className="new-consultation-btn"
+          onClick={startNewConsultation}
+        >
+          New consultation
+        </button>
+        <div className="history-column">
           <h3>Past consultations</h3>
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={startNewConsultation}
-          >
-            New consultation
-          </button>
-        </div>
-        {history.length === 0 ? (
-          <p className="empty-hint">No past consultations yet.</p>
-        ) : (
-          <ul className="history-list">
-            {history.map((consultation) => (
-              <li key={consultation.id}>
-                <button
-                  type="button"
-                  className={`history-item${
-                    consultation.id === activeConsultationId ? " active" : ""
-                  }`}
-                  onClick={() => openConsultation(consultation)}
-                >
-                  {consultationHistoryLabel(consultation)}
-                </button>
-              </li>
+          <ul className="history-window">
+            {history.map((consultation) => {
+              const parts = consultationHistoryParts(consultation);
+              return (
+                <li key={consultation.id}>
+                  <button
+                    type="button"
+                    className={`history-item${
+                      consultation.id === activeConsultationId ? " active" : ""
+                    }`}
+                    onClick={() => openConsultation(consultation)}
+                  >
+                    {parts.lead && <span>{parts.lead}</span>}
+                    {parts.tags.length > 0 && (
+                      <span className="history-tags">{parts.tags.join(", ")}</span>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+            {Array.from({
+              length: Math.max(0, HISTORY_PAGE - history.length),
+            }).map((_, index) => (
+              <li key={`blank-${index}`} className="history-slot" aria-hidden="true" />
             ))}
           </ul>
-        )}
+          {historyTotal > history.length && (
+            <button
+              type="button"
+              className="history-more"
+              onClick={() => setVisibleCount((count) => count + HISTORY_PAGE)}
+            >
+              Load more
+            </button>
+          )}
+        </div>
       </div>
+      )}
 
+      {showForm && (
+      <>
       <div className="panel">
         <h3>
-          {activeConsultationId
-            ? "Edit consultation — Structured Symptoms"
-            : "Consultation — Structured Symptoms"}
+          {isDryRun
+            ? readOnly
+              ? "Dry run"
+              : "Try a consultation"
+            : activeConsultationId
+              ? "Edit consultation — Structured Symptoms"
+              : "Consultation — Structured Symptoms"}
         </h3>
         <p className="empty-hint" style={{ marginTop: "-0.4rem" }}>
           Maximum {MAX_SYMPTOMS} symptoms. Location and Sensation are required.
@@ -379,6 +483,7 @@ export default function PatientWorkspace({ patient }: Props) {
             <div className="symptom-card" key={index}>
               <div className="symptom-card-header">
                 <strong>Symptom {index + 1}</strong>
+                {!readOnly && (
                 <button
                   type="button"
                   className="btn-danger"
@@ -386,12 +491,14 @@ export default function PatientWorkspace({ patient }: Props) {
                 >
                   Remove
                 </button>
+                )}
               </div>
               <div className="fields-4">
                 <label>
                   Location <span className="required-mark">*</span>
                   <input
                     required
+                    disabled={readOnly}
                     value={symptom.location}
                     onChange={(e) =>
                       updateSymptom(index, "location", e.target.value)
@@ -403,6 +510,7 @@ export default function PatientWorkspace({ patient }: Props) {
                   Sensation <span className="required-mark">*</span>
                   <input
                     required
+                    disabled={readOnly}
                     value={symptom.sensation}
                     onChange={(e) =>
                       updateSymptom(index, "sensation", e.target.value)
@@ -413,6 +521,7 @@ export default function PatientWorkspace({ patient }: Props) {
                 <label>
                   Modality
                   <input
+                    disabled={readOnly}
                     value={symptom.modality}
                     onChange={(e) =>
                       updateSymptom(index, "modality", e.target.value)
@@ -423,6 +532,7 @@ export default function PatientWorkspace({ patient }: Props) {
                 <label>
                   Concomitant
                   <input
+                    disabled={readOnly}
                     value={symptom.concomitant}
                     onChange={(e) =>
                       updateSymptom(index, "concomitant", e.target.value)
@@ -435,6 +545,7 @@ export default function PatientWorkspace({ patient }: Props) {
           ))}
         </div>
 
+        {!readOnly && (
         <div className="row-actions">
           <button
             type="button"
@@ -445,16 +556,19 @@ export default function PatientWorkspace({ patient }: Props) {
             Add symptom ({symptoms.length}/{MAX_SYMPTOMS})
           </button>
         </div>
+        )}
 
         <label style={{ display: "grid", gap: "0.35rem", marginTop: "1rem" }}>
           Doctor notes
           <textarea
+            disabled={readOnly}
             value={doctorNotes}
             onChange={(e) => setDoctorNotes(e.target.value)}
             placeholder="Case history, observations, differentials…"
           />
         </label>
 
+        {!readOnly && (
         <div className="row-actions">
           <button
             type="button"
@@ -465,6 +579,7 @@ export default function PatientWorkspace({ patient }: Props) {
             {analyzing ? "Running AI Analysis…" : "Run AI Analysis"}
           </button>
         </div>
+        )}
       </div>
 
       <div className="panel">
@@ -484,9 +599,21 @@ export default function PatientWorkspace({ patient }: Props) {
         )}
         {suggestedTags.length > 0 && (
           <div>
-            <p className="empty-hint">Select tags to save with this consultation.</p>
+            <p className="empty-hint">
+              {isDryRun
+                ? "Tags saved with this dry run."
+                : "Select tags to save with this consultation."}
+            </p>
             <div className="tag-list">
-              {suggestedTags.map((tag) => (
+              {suggestedTags.map((tag) =>
+                readOnly || isDryRun ? (
+                  <span
+                    key={tag}
+                    className={`tag-chip${selectedTags.includes(tag) ? " selected" : ""}`}
+                  >
+                    {tag}
+                  </span>
+                ) : (
                 <button
                   key={tag}
                   type="button"
@@ -496,12 +623,14 @@ export default function PatientWorkspace({ patient }: Props) {
                 >
                   {tag}
                 </button>
-              ))}
+                ),
+              )}
             </div>
           </div>
         )}
       </div>
 
+      {!isDryRun && (
       <div className="panel">
         <h3>Finalize Remedies</h3>
         <p className="empty-hint" style={{ marginTop: "-0.35rem" }}>
@@ -577,6 +706,28 @@ export default function PatientWorkspace({ patient }: Props) {
         {error && <p className="form-error">{error}</p>}
         {status && <p className="form-success">{status}</p>}
       </div>
+      )}
+
+      {isDryRun && (error || status) && (
+        <div className="panel">
+          {error && <p className="form-error">{error}</p>}
+          {status && <p className="form-success">{status}</p>}
+        </div>
+      )}
+      </>
+      )}
+
+      {patient && !isDryRun && (
+        <NewPatientModal
+          open={editOpen}
+          onClose={() => setEditOpen(false)}
+          doctorId={patient.doctor_id}
+          patient={patient}
+          onCreated={() => undefined}
+          onUpdated={onPatientUpdated}
+          onArchived={onPatientArchived}
+        />
+      )}
 
       {confirmSave && (
         <div className="modal-backdrop" role="presentation">

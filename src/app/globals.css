@@ -77,10 +77,13 @@ button {
   padding: 2.25rem;
 }
 
-.auth-panel h1 {
-  margin: 0.35rem 0 0.5rem;
-  font-size: 2.6rem;
-  color: var(--brand-deep);
+.login-logo {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 13rem;
+  object-fit: contain;
+  margin: 0.4rem 0 0.75rem;
 }
 
 .eyebrow {
@@ -205,24 +208,82 @@ button:disabled {
 .app-shell {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 320px 1fr;
+  grid-template-columns: 360px 1fr;
 }
 
 .sidebar {
   border-right: 1px solid var(--line);
-  background: color-mix(in srgb, var(--panel) 88%, #dfe9e2);
+  background:
+    linear-gradient(180deg, rgba(15, 106, 106, 0.16), transparent 28%),
+    linear-gradient(165deg, #e5f3f0 0%, #f8f1e6 100%);
   padding: 1.25rem;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 1.15rem;
   min-height: 100vh;
+}
+
+.brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.brand-logo {
+  height: 7.25rem;
+  width: auto;
+  max-width: 100%;
+  display: block;
+  flex: 0 0 auto;
+  object-fit: contain;
+}
+
+.try-now-btn {
+  width: 100%;
+  border: none;
+  border-radius: 999px;
+  padding: 0.8rem 1rem;
+  color: white;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: linear-gradient(100deg, #0f6a6a, #f59e0b 42%, #e11d48 78%, #0f6a6a);
+  background-size: 220% 100%;
+  animation: try-shimmer 3.2s linear infinite;
+  box-shadow: 0 10px 22px rgba(225, 29, 72, 0.28);
+}
+
+.sidebar-block {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.7rem;
+  flex: 0 0 auto;
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid #c5d5cf;
+  border-radius: 0.75rem;
+  padding: 0.85rem;
+}
+
+.sidebar-label {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--brand-deep);
 }
 
 .sidebar-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 2px solid rgba(15, 106, 106, 0.28);
 }
 
 .sidebar-header h1 {
@@ -240,19 +301,95 @@ button:disabled {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: grid;
-  gap: 0.45rem;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: stretch;
+  gap: 0.35rem;
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.patient-list > li {
+  flex: 0 0 auto;
+  width: 100%;
+  margin: 0;
+}
+
+.patient-row {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.patient-row .patient-item {
   flex: 1;
+  min-width: 0;
+}
+
+.icon-btn {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: none;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: var(--brand);
+}
+
+.icon-btn svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.icon-btn:hover {
+  background: rgba(15, 106, 106, 0.12);
+}
+
+.icon-btn.danger {
+  color: var(--danger);
+}
+
+.icon-btn.danger:hover {
+  background: rgba(159, 18, 57, 0.12);
+}
+
+.patient-title {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.patient-title h2 {
+  margin: 0;
+}
+
+.workspace-header .icon-btn {
+  width: 2.2rem;
+  height: 2.2rem;
+}
+
+.workspace-header .icon-btn svg {
+  width: 1.25rem;
+  height: 1.25rem;
 }
 
 .patient-item {
   width: 100%;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 0.15rem;
   text-align: left;
   border: 1px solid transparent;
   background: transparent;
   border-radius: 0.4rem;
-  padding: 0.75rem 0.8rem;
+  padding: 0.55rem 0.7rem;
 }
 
 .patient-item:hover,
@@ -314,6 +451,7 @@ button:disabled {
 .panel {
   background: color-mix(in srgb, var(--panel) 94%, white);
   border: 1px solid var(--line);
+  border-top: 3px solid var(--brand);
   box-shadow: var(--shadow);
   padding: 1.1rem 1.2rem;
   margin-bottom: 1rem;
@@ -418,8 +556,13 @@ button:disabled {
 .modal-actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 0.55rem;
   margin-top: 1rem;
+}
+
+.modal-actions .icon-btn.danger {
+  margin-right: auto;
 }
 
 .empty-hint {
@@ -427,33 +570,109 @@ button:disabled {
   font-size: 0.92rem;
 }
 
-.history-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.75rem;
+.history-split {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
 }
 
-.history-list {
+.history-column {
+  --history-row: 2.7rem;
+  --history-gap: 0.4rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.history-column h3 {
+  margin-bottom: 0.25rem;
+}
+
+.history-window {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 0.4rem;
+  align-content: start;
+  grid-auto-rows: var(--history-row);
+  gap: var(--history-gap);
+  max-height: calc(5 * var(--history-row) + 4 * var(--history-gap));
+  overflow-y: auto;
+}
+
+.history-item,
+.history-slot,
+.history-more {
+  height: var(--history-row);
+  border-radius: 0.4rem;
 }
 
 .history-item {
   width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
   text-align: left;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid #c9ddd8;
+  background: #fff;
   color: var(--ink);
-  padding: 0.55rem 0.7rem;
+  padding: 0 0.7rem;
+  overflow: hidden;
+}
+
+.history-item span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .history-item.active {
   border-color: var(--brand);
-  background: rgba(15, 106, 106, 0.08);
+  background: #e7f6f4;
+}
+
+.history-slot {
+  border: 1px dashed #d5c4ae;
+  background: rgba(255, 247, 237, 0.55);
+}
+
+.history-tags {
+  color: #9a3412;
+  background: #ffedd5;
+  border-radius: 999px;
+  padding: 0.12rem 0.5rem;
+  font-weight: 700;
+  flex: 0 1 auto;
+}
+
+.history-more {
+  width: 100%;
+  border: 1px solid #e8b089;
+  background: #fff7ed;
+  color: #9a3412;
+  font-weight: 700;
+}
+
+.new-consultation-btn {
+  align-self: start;
+  height: auto;
+  min-height: 0;
+  border: none;
+  border-radius: 0.55rem;
+  padding: 0.85rem 1rem;
+  color: #fffaf5;
+  background: linear-gradient(165deg, #0c6b68 0%, #14948a 70%, #e07a3d 140%);
+  font-family: var(--font-sans);
+  font-size: 0.98rem;
+  font-weight: 700;
+  line-height: 1.2;
+  box-shadow: 0 8px 16px rgba(15, 106, 106, 0.18);
+}
+
+.new-consultation-btn:hover {
+  filter: brightness(1.05);
 }
 
 .tag-list {
@@ -464,10 +683,13 @@ button:disabled {
 }
 
 .tag-chip {
+  display: inline-flex;
+  align-items: center;
   border: 1px solid var(--line);
   background: white;
   color: var(--ink);
   padding: 0.3rem 0.65rem;
+  border-radius: 999px;
 }
 
 .tag-chip.selected {
@@ -478,6 +700,19 @@ button:disabled {
 
 .required-mark {
   color: var(--danger);
+}
+
+@keyframes try-shimmer {
+  from {
+    background-position: 0% 50%;
+  }
+  to {
+    background-position: 220% 50%;
+  }
+}
+
+nextjs-portal {
+  display: none !important;
 }
 
 @keyframes fade-in {
@@ -512,11 +747,16 @@ button:disabled {
   }
 
   .patient-list {
-    max-height: 220px;
+    max-height: none;
   }
 
   .fields-4,
-  .remedy-row {
+  .remedy-row,
+  .history-split {
     grid-template-columns: 1fr;
+  }
+
+  .new-consultation-btn {
+    min-height: 0;
   }
 }

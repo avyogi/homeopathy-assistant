@@ -12,6 +12,7 @@ create table if not exists public.patients (
   age integer,
   gender text check (gender in ('male', 'female', 'other', 'unspecified')),
   constitutional_notes text,
+  status text not null default 'ACTIVE' check (status in ('ACTIVE', 'ARCHIVED')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

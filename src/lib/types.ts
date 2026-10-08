@@ -1,5 +1,7 @@
 export type Gender = "male" | "female" | "other" | "unspecified";
 
+export type PatientStatus = "ACTIVE" | "ARCHIVED";
+
 export type Patient = {
   id: string;
   doctor_id: string;
@@ -8,6 +10,7 @@ export type Patient = {
   age: number | null;
   gender: Gender | null;
   constitutional_notes: string | null;
+  status: PatientStatus;
   created_at: string;
   updated_at: string;
 };
@@ -25,6 +28,8 @@ export type PrescribedRemedy = {
   system: "classical" | "electro-homeopathy" | "other";
   notes?: string;
 };
+
+export const DRY_RUN_PATIENT_NAME = "DRY_RUN";
 
 export type Consultation = {
   id: string;
@@ -84,20 +89,23 @@ export function parseSuggestedTags(markdown: string): string[] {
   return [...new Set(tags)].slice(0, 4);
 }
 
-export function consultationHistoryLabel(consultation: {
+export function consultationHistoryParts(consultation: {
   doctor_notes: string | null;
   tags?: string[] | null;
   symptoms: string[];
-}): string {
+}): { lead: string | null; tags: string[] } {
   const tags = consultation.tags ?? [];
   const notes = consultation.doctor_notes?.trim() ?? "";
 
   if (tags.length === 0) {
     const symptom = parseSymptom(consultation.symptoms[0] ?? "");
-    return `${previewText(symptom.location)} ${previewText(symptom.sensation)}`;
+    return {
+      lead: `${previewText(symptom.location)} ${previewText(symptom.sensation)}`,
+      tags: [],
+    };
   }
 
-  if (!notes) return tags.join(", ");
+  if (!notes) return { lead: null, tags };
 
-  return `${previewText(notes)} ${tags.join(", ")}`;
+  return { lead: previewText(notes), tags };
 }
