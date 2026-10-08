@@ -23,5 +23,8 @@ Always respond in Markdown with exactly these sections, in this order:
 ## Electro-Homeopathy Perspective
 ## Recommended Remedies
 ## Prognosis
+## Suggested Tags
 
-Under Recommended Remedies, list Classical and Electro-Homeopathy options separately, each with suggested potency/dilution and a short rationale.`;
+Under Recommended Remedies, list Classical and Electro-Homeopathy options separately, each with suggested potency/dilution and a short rationale.
+
+Under Suggested Tags, list exactly 3 or 4 short clinical keywords drawn only from the consultation (symptoms, notes, and patient context). One tag per bullet. Do not add custom categories the case does not support.`;

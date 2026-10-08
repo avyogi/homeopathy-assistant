@@ -1,11 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { createClient } from "@/lib/supabase/client";
 import {
+  consultationHistoryLabel,
   emptySymptom,
   formatSymptom,
+  parseSuggestedTags,
+  parseSymptom,
+  type Consultation,
   type Patient,
   type PrescribedRemedy,
   type SymptomEntry,
@@ -17,17 +21,79 @@ type Props = {
 
 const MAX_SYMPTOMS = 10;
 
+const emptyRemedy = (): PrescribedRemedy => ({
+  name: "",
+  potency: "",
+  system: "classical",
+  notes: "",
+});
+
+function filledSymptoms(symptoms: SymptomEntry[]) {
+  return symptoms.filter(
+    (symptom) =>
+      symptom.location.trim() ||
+      symptom.sensation.trim() ||
+      symptom.modality.trim() ||
+      symptom.concomitant.trim(),
+  );
+}
+
+function validateSymptoms(symptoms: SymptomEntry[]) {
+  const filled = filledSymptoms(symptoms);
+  if (filled.length === 0) {
+    return "Add at least one symptom with Location and Sensation.";
+  }
+  if (filled.length > MAX_SYMPTOMS) {
+    return `Maximum of ${MAX_SYMPTOMS} symptoms allowed.`;
+  }
+  const incomplete = filled.find(
+    (symptom) => !symptom.location.trim() || !symptom.sensation.trim(),
+  );
+  if (incomplete) {
+    return "Location and Sensation are required for each symptom.";
+  }
+  return null;
+}
+
 export default function PatientWorkspace({ patient }: Props) {
   const [symptoms, setSymptoms] = useState<SymptomEntry[]>([emptySymptom()]);
   const [doctorNotes, setDoctorNotes] = useState("");
   const [analysis, setAnalysis] = useState("");
+  const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [analyzing, setAnalyzing] = useState(false);
-  const [remedies, setRemedies] = useState<PrescribedRemedy[]>([
-    { name: "", potency: "", system: "classical", notes: "" },
-  ]);
+  const [remedies, setRemedies] = useState<PrescribedRemedy[]>([emptyRemedy()]);
+  const [history, setHistory] = useState<Consultation[]>([]);
+  const [activeConsultationId, setActiveConsultationId] = useState<string | null>(
+    null,
+  );
   const [saving, setSaving] = useState(false);
+  const [confirmSave, setConfirmSave] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const loadHistory = useCallback(async () => {
+    const supabase = createClient();
+    const { data, error: loadError } = await supabase
+      .from("consultations")
+      .select(
+        "id, patient_id, symptoms, doctor_notes, remedy_analysis, prescribed_remedies, tags, created_at, updated_at",
+      )
+      .eq("patient_id", patient.id)
+      .order("created_at", { ascending: false })
+      .limit(5);
+
+    if (loadError) {
+      setError(loadError.message);
+      return;
+    }
+
+    setHistory((data ?? []) as Consultation[]);
+  }, [patient.id]);
+
+  useEffect(() => {
+    void loadHistory();
+  }, [loadHistory]);
 
   function updateSymptom(index: number, field: keyof SymptomEntry, value: string) {
     setSymptoms((prev) =>
@@ -56,30 +122,60 @@ export default function PatientWorkspace({ patient }: Props) {
     );
   }
 
+  function startNewConsultation() {
+    setActiveConsultationId(null);
+    setSymptoms([emptySymptom()]);
+    setDoctorNotes("");
+    setAnalysis("");
+    setSuggestedTags([]);
+    setSelectedTags([]);
+    setRemedies([emptyRemedy()]);
+    setStatus(null);
+    setError(null);
+    setConfirmSave(false);
+  }
+
+  function openConsultation(consultation: Consultation) {
+    const parsed = consultation.symptoms.map(parseSymptom);
+    setActiveConsultationId(consultation.id);
+    setSymptoms(parsed.length > 0 ? parsed : [emptySymptom()]);
+    setDoctorNotes(consultation.doctor_notes ?? "");
+    const savedTags = consultation.tags ?? [];
+    const fromAnalysis = parseSuggestedTags(consultation.remedy_analysis ?? "");
+    setAnalysis(consultation.remedy_analysis ?? "");
+    setSuggestedTags([...new Set([...savedTags, ...fromAnalysis])].slice(0, 4));
+    setSelectedTags(savedTags);
+    setRemedies(
+      consultation.prescribed_remedies.length > 0
+        ? consultation.prescribed_remedies
+        : [emptyRemedy()],
+    );
+    setStatus(null);
+    setError(null);
+    setConfirmSave(false);
+  }
+
+  function toggleTag(tag: string) {
+    setSelectedTags((prev) =>
+      prev.includes(tag) ? prev.filter((item) => item !== tag) : [...prev, tag],
+    );
+  }
+
   async function runAnalysis() {
     setError(null);
     setStatus(null);
 
-    const filled = symptoms.filter(
-      (s) =>
-        s.location.trim() ||
-        s.sensation.trim() ||
-        s.modality.trim() ||
-        s.concomitant.trim(),
-    );
-
-    if (filled.length === 0) {
-      setError("Add at least one structured symptom before running analysis.");
+    const validationError = validateSymptoms(symptoms);
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
-    if (filled.length > MAX_SYMPTOMS) {
-      setError(`Maximum of ${MAX_SYMPTOMS} symptoms allowed.`);
-      return;
-    }
-
+    const filled = filledSymptoms(symptoms);
     setAnalyzing(true);
     setAnalysis("");
+    setSuggestedTags([]);
+    setSelectedTags([]);
 
     try {
       const response = await fetch("/api/analyze", {
@@ -113,10 +209,12 @@ export default function PatientWorkspace({ patient }: Props) {
         if (done) break;
         text += decoder.decode(value, { stream: true });
         setAnalysis(text);
+        setSuggestedTags(parseSuggestedTags(text));
       }
 
       text += decoder.decode();
       setAnalysis(text);
+      setSuggestedTags(parseSuggestedTags(text));
 
       if (!text.trim()) {
         throw new Error(
@@ -129,7 +227,7 @@ export default function PatientWorkspace({ patient }: Props) {
         throw new Error(text.slice(errorMarker).replace("**Error:**", "").trim());
       }
 
-      setStatus("Analysis complete. Review and finalize remedies below.");
+      setStatus("Analysis complete. Select tags, then review and finalize remedies.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Analysis failed");
     } finally {
@@ -137,22 +235,13 @@ export default function PatientWorkspace({ patient }: Props) {
     }
   }
 
-  async function saveConsultation() {
+  function requestSave() {
     setError(null);
     setStatus(null);
 
-    const filledSymptoms = symptoms.filter(
-      (s) =>
-        s.location.trim() ||
-        s.sensation.trim() ||
-        s.modality.trim() ||
-        s.concomitant.trim(),
-    );
-
-    const filledRemedies = remedies.filter((r) => r.name.trim());
-
-    if (filledSymptoms.length === 0) {
-      setError("Cannot save without symptoms.");
+    const validationError = validateSymptoms(symptoms);
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
@@ -161,27 +250,51 @@ export default function PatientWorkspace({ patient }: Props) {
       return;
     }
 
+    const filledRemedies = remedies.filter((remedy) => remedy.name.trim());
     if (filledRemedies.length === 0) {
       setError("Add at least one finalized remedy and potency.");
       return;
     }
 
-    setSaving(true);
-    const supabase = createClient();
+    if (activeConsultationId) {
+      setConfirmSave(true);
+      return;
+    }
 
-    const { error: saveError } = await supabase.from("consultations").insert({
+    void persistConsultation("insert");
+  }
+
+  async function persistConsultation(mode: "insert" | "update") {
+    setConfirmSave(false);
+    setSaving(true);
+    setError(null);
+
+    const payload = {
       patient_id: patient.id,
-      symptoms: filledSymptoms.map(formatSymptom),
+      symptoms: filledSymptoms(symptoms).map(formatSymptom),
       doctor_notes: doctorNotes.trim() || null,
       remedy_analysis: analysis,
-      prescribed_remedies: filledRemedies.map((r) => ({
-        name: r.name.trim(),
-        potency: r.potency.trim(),
-        system: r.system,
-        notes: r.notes?.trim() || undefined,
-      })),
-    });
+      prescribed_remedies: remedies
+        .filter((remedy) => remedy.name.trim())
+        .map((remedy) => ({
+          name: remedy.name.trim(),
+          potency: remedy.potency.trim(),
+          system: remedy.system,
+          notes: remedy.notes?.trim() || undefined,
+        })),
+      tags: selectedTags,
+    };
 
+    const supabase = createClient();
+    const query =
+      mode === "update" && activeConsultationId
+        ? supabase
+            .from("consultations")
+            .update(payload)
+            .eq("id", activeConsultationId)
+        : supabase.from("consultations").insert(payload);
+
+    const { error: saveError } = await query;
     setSaving(false);
 
     if (saveError) {
@@ -189,7 +302,16 @@ export default function PatientWorkspace({ patient }: Props) {
       return;
     }
 
-    setStatus("Consultation saved to the patient record.");
+    if (mode === "insert") {
+      startNewConsultation();
+    }
+
+    setStatus(
+      mode === "update"
+        ? "Consultation updated."
+        : "Consultation saved to the patient record.",
+    );
+    await loadHistory();
   }
 
   return (
@@ -211,10 +333,45 @@ export default function PatientWorkspace({ patient }: Props) {
       </header>
 
       <div className="panel">
-        <h3>Consultation — Structured Symptoms</h3>
+        <div className="history-header">
+          <h3>Past consultations</h3>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={startNewConsultation}
+          >
+            New consultation
+          </button>
+        </div>
+        {history.length === 0 ? (
+          <p className="empty-hint">No past consultations yet.</p>
+        ) : (
+          <ul className="history-list">
+            {history.map((consultation) => (
+              <li key={consultation.id}>
+                <button
+                  type="button"
+                  className={`history-item${
+                    consultation.id === activeConsultationId ? " active" : ""
+                  }`}
+                  onClick={() => openConsultation(consultation)}
+                >
+                  {consultationHistoryLabel(consultation)}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="panel">
+        <h3>
+          {activeConsultationId
+            ? "Edit consultation — Structured Symptoms"
+            : "Consultation — Structured Symptoms"}
+        </h3>
         <p className="empty-hint" style={{ marginTop: "-0.4rem" }}>
-          Maximum {MAX_SYMPTOMS} symptoms. Capture Location, Sensation, Modality,
-          and Concomitant for each.
+          Maximum {MAX_SYMPTOMS} symptoms. Location and Sensation are required.
         </p>
 
         <div className="symptom-grid">
@@ -232,8 +389,9 @@ export default function PatientWorkspace({ patient }: Props) {
               </div>
               <div className="fields-4">
                 <label>
-                  Location
+                  Location <span className="required-mark">*</span>
                   <input
+                    required
                     value={symptom.location}
                     onChange={(e) =>
                       updateSymptom(index, "location", e.target.value)
@@ -242,8 +400,9 @@ export default function PatientWorkspace({ patient }: Props) {
                   />
                 </label>
                 <label>
-                  Sensation
+                  Sensation <span className="required-mark">*</span>
                   <input
+                    required
                     value={symptom.sensation}
                     onChange={(e) =>
                       updateSymptom(index, "sensation", e.target.value)
@@ -323,6 +482,24 @@ export default function PatientWorkspace({ patient }: Props) {
             <ReactMarkdown>{analysis}</ReactMarkdown>
           </div>
         )}
+        {suggestedTags.length > 0 && (
+          <div>
+            <p className="empty-hint">Select tags to save with this consultation.</p>
+            <div className="tag-list">
+              {suggestedTags.map((tag) => (
+                <button
+                  key={tag}
+                  type="button"
+                  className={`tag-chip${selectedTags.includes(tag) ? " selected" : ""}`}
+                  onClick={() => toggleTag(tag)}
+                  aria-pressed={selectedTags.includes(tag)}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="panel">
@@ -370,14 +547,7 @@ export default function PatientWorkspace({ patient }: Props) {
                 onClick={() =>
                   setRemedies((prev) =>
                     prev.length === 1
-                      ? [
-                          {
-                            name: "",
-                            potency: "",
-                            system: "classical",
-                            notes: "",
-                          },
-                        ]
+                      ? [emptyRemedy()]
                       : prev.filter((_, i) => i !== index),
                   )
                 }
@@ -391,19 +561,14 @@ export default function PatientWorkspace({ patient }: Props) {
           <button
             type="button"
             className="btn-secondary"
-            onClick={() =>
-              setRemedies((prev) => [
-                ...prev,
-                { name: "", potency: "", system: "classical", notes: "" },
-              ])
-            }
+            onClick={() => setRemedies((prev) => [...prev, emptyRemedy()])}
           >
             Add remedy
           </button>
           <button
             type="button"
             className="btn-primary"
-            onClick={saveConsultation}
+            onClick={requestSave}
             disabled={saving}
           >
             {saving ? "Saving…" : "Save Consultation"}
@@ -412,6 +577,38 @@ export default function PatientWorkspace({ patient }: Props) {
         {error && <p className="form-error">{error}</p>}
         {status && <p className="form-success">{status}</p>}
       </div>
+
+      {confirmSave && (
+        <div className="modal-backdrop" role="presentation">
+          <div className="modal" role="dialog" aria-labelledby="save-choice-title">
+            <h3 id="save-choice-title">Save consultation</h3>
+            <p>Overwrite this consultation, or save it as a new one?</p>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setConfirmSave(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => void persistConsultation("insert")}
+              >
+                Save as new
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => void persistConsultation("update")}
+              >
+                Overwrite
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
